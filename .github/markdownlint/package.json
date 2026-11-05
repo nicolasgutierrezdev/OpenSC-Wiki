@@ -1,0 +1,9 @@
+{
+  "name": "opensc-wiki-markdownlint",
+  "private": true,
+  "description": "Pinned markdownlint-cli used by .github/workflows/markdownlint.yml",
+  "license": "MIT",
+  "devDependencies": {
+    "markdownlint-cli": "0.50.0"
+  }
+}
