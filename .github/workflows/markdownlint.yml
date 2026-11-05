@@ -14,8 +14,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: articulate/actions-markdownlint@v1
+      - uses: actions/checkout@v7
         with:
-          config: .github/markdownlint-config.json
-          files: './*.md'
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # markdownlint-cli (MIT, https://github.com/igorshubovych/markdownlint-cli)
+      # is pinned in .github/markdownlint/package-lock.json, so every
+      # dependency is verified against its recorded integrity hash.
+      - name: Install markdownlint-cli
+        working-directory: .github/markdownlint
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run markdownlint
+        id: lint
+        run: |
+          set +e
+          .github/markdownlint/node_modules/.bin/markdownlint \
+            --config .github/markdownlint-config.json \
+            --json --output "$RUNNER_TEMP/markdownlint.json" './*.md'
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Suggest fixes
+        if: steps.lint.outputs.status != '0'
+        run: |
+          .github/markdownlint/node_modules/.bin/markdownlint --fix \
+            --config .github/markdownlint-config.json './*.md' > /dev/null 2>&1 || true
+          git diff > markdownlint-fixes.patch
+
+      # Prints a colored report, creates annotations (GitHub displays the
+      # first 10 per step) and writes the full report to the job summary.
+      - name: Report problems
+        env:
+          LINT_STATUS: ${{ steps.lint.outputs.status }}
+        run: |
+          node .github/markdownlint/report.js \
+            "$RUNNER_TEMP/markdownlint.json" markdownlint-report.txt \
+            markdownlint-fixes.patch
+
+      - name: Upload report and suggested fixes
+        if: failure() && steps.lint.outputs.status != '0'
+        uses: actions/upload-artifact@v7
+        with:
+          name: markdownlint-fixes
+          path: |
+            markdownlint-report.txt
+            markdownlint-fixes.patch
+          if-no-files-found: ignore
